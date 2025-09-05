@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Couples Relationship Self-Assessment</title>
   <!-- React UMD + Babel for single-file dev. Swap to production builds for deployment -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -12,13 +12,23 @@
   <style>
     :root{
       --bg:#0b0f15; --card:#101623; --muted:#8aa0b3; --text:#e6eef6; --accent:#46b2ff; --bad:#f06d6d; --good:#43d08a; --warn:#f7b955;
+      --controls-h: 96px; /* fallback until JS measures real height */
     }
     *{box-sizing:border-box}
     html,body{height:100%; margin:0;}
-    body{font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:linear-gradient(180deg,#09111d,#0b0f15 20% 80%,#070b11); color:var(--text);}
+    body{
+      font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background:linear-gradient(180deg,#09111d,#0b0f15 20% 80%,#070b11);
+      color:var(--text);
+      min-height:100svh; /* handle mobile dynamic toolbar */
+    }
     header{position:sticky; top:0; z-index:20; backdrop-filter: blur(8px); background: linear-gradient(180deg, rgba(11,15,21,.9), rgba(11,15,21,.6)); border-bottom:1px solid rgba(255,255,255,.06)}
     .wrap{max-width:980px; margin:0 auto; padding:24px; width:100%}
-    main{padding-bottom:96px;} /* keeps content clear of fixed control bar */
+
+    /* Always leave room for the fixed controls (incl. safe area) */
+    main{
+      padding-bottom: calc(var(--controls-h) + max(12px, env(safe-area-inset-bottom)));
+    }
 
     h1{margin:0 0 8px; font-size:28px}
     p.lead{margin:0; color:var(--muted)}
@@ -39,13 +49,25 @@
     .pill:hover{border-color:rgba(255,255,255,.18); transform:translateY(-1px)}
     .pill.active{background:linear-gradient(180deg,#11223a,#0d1a2c); border-color:#60c3ff; color:#fff; box-shadow:0 0 0 3px rgba(96,195,255,.15)}
 
-    /* Fixed controls bar always visible */
-    .controls{position:fixed; bottom:0; left:0; right:0; z-index:30; background:rgba(10,16,26,.96); backdrop-filter:blur(8px); padding:12px; border-top:1px solid rgba(255,255,255,.08)}
-    .controls .bar{display:flex; gap:12px; max-width:980px; margin:0 auto; flex-wrap:wrap; align-items:center}
-    .btn{appearance:none; border:1px solid rgba(255,255,255,.12); background:#0e1625; color:#e7f2ff; padding:10px 16px; border-radius:10px; cursor:pointer; font-weight:600; text-align:center}
+    /* Fixed controls bar: always visible + safe-area padding */
+    .controls{
+      position:fixed; left:0; right:0; bottom:0; z-index:30;
+      background:rgba(10,16,26,.96); backdrop-filter:blur(8px);
+      padding:12px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      border-top:1px solid rgba(255,255,255,.08)
+    }
+    .controls .bar{
+      display:flex; gap:12px; max-width:980px; margin:0 auto; flex-wrap:wrap; align-items:center;
+    }
+    .btn{
+      appearance:none; border:1px solid rgba(255,255,255,.12); background:#0e1625; color:#e7f2ff;
+      padding:12px 16px; border-radius:12px; cursor:pointer; font-weight:600; text-align:center; line-height:1;
+      min-height:44px; /* touch target */
+    }
     .btn.primary{background:linear-gradient(180deg,#1b6aff,#0d4de6); border-color:#2f74ff}
     .btn.ghost{background:transparent}
-    .spacer{flex:1}
+    .spacer{flex:1; min-width:24px}
 
     .results{margin-top:20px}
     .metric{display:grid; grid-template-columns:220px 1fr; gap:12px; align-items:center; padding:10px 12px; border-bottom:1px dashed rgba(255,255,255,.08)}
@@ -53,6 +75,13 @@
     .barline > div{height:100%; background:linear-gradient(90deg, #43d08a, #7be39a)}
     .score-tag{font-weight:700}
     .hint{color:var(--muted); font-size:12px}
+
+    @media (max-width:520px){
+      /* Keep primary action visible on small screens when wrapping */
+      .controls .bar {gap:8px}
+      .btn {flex:1}
+      .spacer {display:none}
+    }
 
     @media print{ header,.controls{display:none} main{padding-bottom:0} body{background:#fff;color:#000} .card{box-shadow:none;border-color:#ddd} .question{background:#fff} }
   </style>
@@ -69,15 +98,38 @@
     <div id="app"></div>
   </main>
 
-  <div class="controls">
+  <div class="controls" id="controls">
     <div class="bar">
-      <button class="btn ghost" id="resetBtn">Reset</button>
-      <button class="btn" id="csvBtn">Export CSV</button>
-      <button class="btn" id="jsonBtn">Export JSON</button>
+      <button class="btn ghost" id="resetBtn" type="button">Reset</button>
+      <button class="btn" id="csvBtn" type="button">Export CSV</button>
+      <button class="btn" id="jsonBtn" type="button">Export JSON</button>
       <span class="spacer"></span>
-      <button class="btn primary" id="submitBtn">Submit & Compute</button>
+      <button class="btn primary" id="submitBtn" type="button">Submit & Compute</button>
     </div>
   </div>
+
+  <script>
+    // Measure controls height and set --controls-h so <main> never hides behind it
+    (function ensureControlsVisibility(){
+      const root = document.documentElement;
+      const controls = document.getElementById('controls');
+      function setPad(){
+        if(!controls) return;
+        const h = controls.offsetHeight || 0;
+        root.style.setProperty('--controls-h', h + 'px');
+      }
+      // Initial + update on resize & when content wraps
+      window.addEventListener('load', setPad, {once:true});
+      window.addEventListener('resize', setPad);
+      if('ResizeObserver' in window){
+        const ro = new ResizeObserver(setPad);
+        ro.observe(controls);
+      }
+      // iOS Safari viewport changes when the URL bar shows/hides
+      window.addEventListener('orientationchange', setPad);
+      document.addEventListener('visibilitychange', setPad);
+    })();
+  </script>
 
   <script type="text/babel">
     const {useState, useMemo, useEffect, useCallback} = React;
